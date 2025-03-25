@@ -1,65 +1,62 @@
 services:
-  syslog-ng:
-    image: balabit/syslog-ng:latest
-    container_name: syslog-ng-server
-    ports:
-      - "514:514/udp"
-      - "514:514/tcp"
-      - "601:601/tcp"
+  # MongoDB for Graylog's configuration storage
+  mongo:
+    image: mongo:6
+    container_name: graylog-mongo
     volumes:
-      - syslog-data:/var/log
-      - ./syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf
+      - mongo_data:/data/db
+    networks:
+      - graylog-net
+    restart: unless-stopped
+
+  # OpenSearch for log storage and indexing (replaces Elasticsearch in newer Graylog versions)
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    container_name: graylog-opensearch
     environment:
-      - TZ=UTC
-    restart: unless-stopped
-    networks:
-      - log-network
-
-  loki:
-    image: grafana/loki:latest
-    container_name: loki
+      - discovery.type=single-node  # Single-node setup for simplicity
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"  # Adjust memory based on your system
+      - plugins.security.disabled=true  # Disable security for simplicity (not for production)
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "3100:3100"
-    volumes:
-      - loki-data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    restart: unless-stopped
+      - "9200:9200"  # OpenSearch HTTP
+      - "9600:9600"  # OpenSearch performance analyzer
     networks:
-      - log-network
+      - graylog-net
+    restart: unless-stopped
 
-  promtail:
-    image: grafana/promtail:latest
-    container_name: promtail
-    volumes:
-      - syslog-data:/var/log  # Scrape logs from syslog-ng
-      - ./promtail-config.yml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
+  # Graylog server
+  graylog:
+    image: graylog/graylog:5.2
+    container_name: graylog-server
     depends_on:
-      - loki
-    restart: unless-stopped
-    networks:
-      - log-network
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana-data:/var/lib/grafana
+      - mongo
+      - opensearch
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin  # Change this in production
-    depends_on:
-      - loki
-    restart: unless-stopped
+      # Required Graylog settings
+      - GRAYLOG_PASSWORD_SECRET=some_long_random_string_32_chars_min  # Replace with a secure secret
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918  # SHA-256 of "admin" (default password)
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/  # URI for external access
+      # Optional: Adjust timezone or other settings
+      - GRAYLOG_TIMEZONE=UTC
+    volumes:
+      - graylog_data:/usr/share/graylog/data
+    ports:
+      - "9000:9000"  # Web UI
+      - "1514:1514/udp"  # Syslog UDP input for network devices
+      - "1514:1514/tcp"  # Syslog TCP input (optional)
     networks:
-      - log-network
+      - graylog-net
+    restart: unless-stopped
 
-networks:
-  log-network:
-    driver: bridge
-
+# Persistent storage volumes
 volumes:
-  syslog-data:
-  loki-data:
-  grafana-data:
+  mongo_data:
+  opensearch_data:
+  graylog_data:
+
+# Internal network for communication
+networks:
+  graylog-net:
+    driver: bridge
