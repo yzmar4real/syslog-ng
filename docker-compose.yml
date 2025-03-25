@@ -1,17 +1,17 @@
 services:
   syslog-ng:
-    image: lscr.io/linuxserver/syslog-ng:latest
-    container_name: syslog-ng
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
-      - LOG_TO_STDOUT= #optional
-    volumes:
-      - /path/to/syslog-ng/config:/config
-      - /path/to/log:/var/log #optional
+    image: balabit/syslog-ng:latest  # Official syslog-ng image
+    container_name: syslog-ng-server
     ports:
-      - 514:5514/udp
-      - 601:6601/tcp
-      - 6514:6514/tcp
+      - "514:514/udp"  # Syslog UDP port
+      - "514:514/tcp"  # Syslog TCP port (optional)
+      - "601:601/tcp"  # Syslog TCP for reliable delivery (optional)
+    volumes:
+      - syslog-data:/var/log  # Persistent storage for logs
+      - ./syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf  # Custom config file
+    environment:
+      - TZ=UTC  # Set timezone as needed
     restart: unless-stopped
+
+volumes:
+  syslog-data:
